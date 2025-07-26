@@ -20,8 +20,6 @@ class NetworkMonitor:
         self.output_file = output_file or f"network_monitor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         self.running = True
         self.data_lock = threading.Lock()
-        
-        # Setup signal handling for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
     
@@ -30,7 +28,6 @@ class NetworkMonitor:
         self.running = False
     
     def run_command(self, command):
-        """Run a shell command and return its output"""
         try:
             result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
             return result.stdout.strip() if result.returncode == 0 else ""
@@ -40,65 +37,51 @@ class NetworkMonitor:
             return ""
     
     def get_ping_latency(self):
-        """Extract ping latency in milliseconds"""
         command = f"ping -c 1 -W 1 {self.target_ip}"
         output = self.run_command(command)
         
-        # Look for time=X.XXX pattern
         match = re.search(r'time=([0-9.]+)', output)
         return float(match.group(1)) if match else None
     
     def get_link_info(self):
-        """Extract RX/TX bitrate and signal strength from iw link"""
         command = f"iw dev {self.interface} link"
         output = self.run_command(command)
         
-        # Extract RX bitrate
         rx_match = re.search(r'rx bitrate:\s+([0-9.]+)\s+MBit/s', output)
         rx_bitrate = float(rx_match.group(1)) if rx_match else None
         
-        # Extract TX bitrate
         tx_match = re.search(r'tx bitrate:\s+([0-9.]+)\s+MBit/s', output)
         tx_bitrate = float(tx_match.group(1)) if tx_match else None
         
-        # Extract signal strength
         signal_match = re.search(r'signal:\s+(-?[0-9]+)\s+dBm', output)
         signal_strength = int(signal_match.group(1)) if signal_match else None
         
         return rx_bitrate, tx_bitrate, signal_strength
     
     def get_interface_info(self):
-        """Extract frequency, width, centre frequency, and TX power from iw info"""
         command = f"iw dev {self.interface} info"
         output = self.run_command(command)
         
-        # Extract frequency
         freq_match = re.search(r'channel\s+\d+\s+\((\d+)\s+MHz\)', output)
         frequency = int(freq_match.group(1)) if freq_match else None
         
-        # Extract channel width
         width_match = re.search(r'width:\s+(\d+)\s+MHz', output)
         width = int(width_match.group(1)) if width_match else None
         
-        # Extract center frequency
         center_match = re.search(r'center1:\s+(\d+)\s+MHz', output)
         centre_frequency = int(center_match.group(1)) if center_match else frequency
         
-        # Extract TX power
         power_match = re.search(r'txpower\s+([0-9.]+)\s+dBm', output)
         tx_power = float(power_match.group(1)) if power_match else None
         
         return frequency, width, centre_frequency, tx_power
     
     def collect_data_sample(self):
-        """Collect one sample of data from all three commands concurrently"""
         with ThreadPoolExecutor(max_workers=3) as executor:
-            # Submit all three tasks concurrently
             ping_future = executor.submit(self.get_ping_latency)
             link_future = executor.submit(self.get_link_info)
             info_future = executor.submit(self.get_interface_info)
-            
-            # Wait for all tasks to complete
+    
             latency = ping_future.result()
             rx_bitrate, tx_bitrate, signal_strength = link_future.result()
             frequency, width, centre_frequency, tx_power = info_future.result()
@@ -116,7 +99,6 @@ class NetworkMonitor:
         }
     
     def write_csv_header(self):
-        """Write CSV header to output file"""
         fieldnames = [
             'timestamp', 'latency_ms', 'rx_bitrate_mbps', 'tx_bitrate_mbps',
             'signal_strength_dbm', 'frequency_mhz', 'width_mhz', 
@@ -128,7 +110,6 @@ class NetworkMonitor:
             writer.writeheader()
     
     def write_data_row(self, data):
-        """Append data row to CSV file"""
         fieldnames = [
             'timestamp', 'latency_ms', 'rx_bitrate_mbps', 'tx_bitrate_mbps',
             'signal_strength_dbm', 'frequency_mhz', 'width_mhz', 
@@ -141,14 +122,12 @@ class NetworkMonitor:
                 writer.writerow(data)
     
     def format_time(self, seconds):
-        """Format seconds into HH:MM:SS"""
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         seconds = seconds % 60
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def run(self):
-        """Main monitoring loop"""
         print("Starting network monitoring...")
         print(f"Target IP: {self.target_ip}")
         print(f"Interface: {self.interface}")
@@ -158,7 +137,6 @@ class NetworkMonitor:
         print("Press Ctrl+C to stop early")
         print()
         
-        # Initialize CSV file
         self.write_csv_header()
         
         start_time = time.time()
@@ -166,13 +144,9 @@ class NetworkMonitor:
         
         try:
             while self.running and time.time() < end_time:
-                # Collect data sample
                 data = self.collect_data_sample()
-                
-                # Write to CSV
                 self.write_data_row(data)
                 
-                # Display progress
                 current_time = time.time()
                 elapsed = int(current_time - start_time)
                 remaining = int(end_time - current_time)
@@ -181,7 +155,6 @@ class NetworkMonitor:
                       f"Remaining: {self.format_time(remaining)} | "
                       f"Latest ping: {data['latency_ms'] or 'N/A'}ms", end='', flush=True)
                 
-                # Wait for next interval
                 time.sleep(self.interval)
                 
         except KeyboardInterrupt:
@@ -191,7 +164,6 @@ class NetworkMonitor:
         print(f"Data saved to: {self.output_file}")
 
 def parse_arguments():
-    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description='Monitor network metrics (ping, wireless link info) and log to CSV',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -226,10 +198,7 @@ Examples:
     return parser.parse_args()
 
 def main():
-    # Parse command line arguments
     args = parse_arguments()
-    
-    # Use provided output filename or generate one
     if args.output:
         output_file = args.output
     else:
@@ -243,7 +212,6 @@ def main():
     print(f"  Output: {output_file}")
     print()
     
-    # Create and run monitor
     monitor = NetworkMonitor(
         target_ip=args.ip,
         interface=args.interface,
